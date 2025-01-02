@@ -86,6 +86,7 @@ def fetch_current_user_playlists(
     page: int = 50,
     limit: int | None = None,
 ) -> list[PlaylistInfo]:
+    names = [name.lower() for name in names]
     playlists = []
     ii = 0
     while True:
@@ -97,11 +98,11 @@ def fetch_current_user_playlists(
             # Skip filtered playlists.
             if owner_only and playlist_owner["id"] != owner_only.id:
                 continue
-            if names and playlist_name not in names:
+            if names and playlist_name.lower() not in names:
                 continue
             playlists.append(
                 PlaylistInfo(
-                    name=playlist_json["name"],
+                    name=playlist_name,
                     id=playlist_json["id"],
                     owner=User(
                         name=playlist_owner["display_name"],
@@ -129,7 +130,6 @@ def fetch_unique_tracks(
     page: int = 50,
     limit: int | None = None,
 ) -> list[TrackInfo]:
-    # TODO: this may need to be done in chunks if number of tracks is high.
     tracks = set()
     for playlist in playlists:
         ii = 0
