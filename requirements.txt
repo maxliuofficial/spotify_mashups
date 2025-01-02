@@ -1,0 +1,9 @@
+beautifulsoup4
+black
+conda-forge::spotipy
+conda-forge::webdriver-manager
+ipykernel
+isort
+python-dotenv
+requests
+selenium
