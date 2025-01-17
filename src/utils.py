@@ -199,7 +199,7 @@ KEY_TO_CAMELOT_KEY = {
 }
 
 
-_DEFAULT_SCRAPE_BATCH_SIZE = 2
+_DEFAULT_SCRAPE_BATCH_SIZE = 10
 
 
 def scrape_track_metadata_beatport(
