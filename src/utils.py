@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import dataclasses
+import os
 import typing as ty
+from concurrent.futures import ThreadPoolExecutor
 
+import more_itertools
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
 from spotipy import Spotify
 
 
@@ -194,32 +199,57 @@ KEY_TO_CAMELOT_KEY = {
 }
 
 
+_DEFAULT_SCRAPE_BATCH_SIZE = 2
+
+
 def scrape_track_metadata_beatport(
-    driver: webdriver.Chrome, tracks: list[TrackInfo]
+    driver_factory: ty.ContextManager[webdriver.Chrome],
+    tracks: list[TrackInfo],
+    batch_size: int = _DEFAULT_SCRAPE_BATCH_SIZE,
 ) -> dict[TrackInfo, TrackMeta]:
+    batches = more_itertools.chunked(tracks, batch_size)
+    cpu_count = os.cpu_count()
+    with ThreadPoolExecutor(max_workers=cpu_count * 2) as executor:
+        results = executor.map(
+            lambda batch: scrape_track(driver_factory, batch),
+            batches,
+        )
+    return {k: v for res in results for k, v in res.items()}
+
+
+def scrape_track(
+    driver_factory: ty.ContextManager[webdriver.Chrome], track_batch: list[TrackInfo]
+) -> dict[TrackInfo, TrackMeta]:
+    res = {}
     # TODO: had to use beatport bc spotify api is deprecated >:( need to find something better.
-    results = {}
-    for track in tracks:
-        # Query the Beatport search page.
-        search_url = f"{BEATPORT_URL}/search?q={track.name} {track.artist}".replace(" ", "%20")
-        driver.get(search_url)
+    with driver_factory() as driver:
+        for track in track_batch:
+            # Query the Beatport search page.
+            search_url = f"{BEATPORT_URL}/search?q={track.name} {track.artist}".replace(" ", "%20")
+            driver.get(search_url)
 
-        # Allow time for the page to load.
-        # time.sleep(1)
+            # Wait until the page has loaded by checking for the presence of the track row element.
+            WebDriverWait(driver, 30).until(
+                EC.element_to_be_clickable(
+                    (
+                        By.XPATH,
+                        "//div[@data-testid='tracks-table-row']//div[contains(@class, 'cell bpm')]/div",
+                    )
+                )
+            )
 
-        # Locate the first track row
-        track_row = driver.find_element(By.XPATH, "//div[@data-testid='tracks-table-row']")
-        # Extract BPM and Key
-        bpm_key_element = track_row.find_element(
-            By.XPATH, ".//div[contains(@class, 'cell bpm')]/div"
-        )
-        # Get the text data.
-        bpm, key = bpm_key_element.text.strip().split(" - ")
+            # Locate the first track row
+            track_row = driver.find_element(By.XPATH, "//div[@data-testid='tracks-table-row']")
+            # Extract BPM and Key
+            bpm_key_element = track_row.find_element(
+                By.XPATH, ".//div[contains(@class, 'cell bpm')]/div"
+            )
+            # Get the text data.
+            bpm, key = bpm_key_element.text.strip().split(" - ")
 
-        results[track] = TrackMeta(
-            bpm=int(bpm.replace("BPM", "").strip()),
-            camelot_key=KEY_TO_CAMELOT_KEY[key],
-            key=key,
-        )
-
-    return results
+            res[track] = TrackMeta(
+                bpm=int(bpm.replace("BPM", "").strip()),
+                camelot_key=KEY_TO_CAMELOT_KEY[key],
+                key=key,
+            )
+    return res

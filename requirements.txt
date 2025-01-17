@@ -4,6 +4,7 @@ conda-forge::spotipy
 conda-forge::webdriver-manager
 ipykernel
 isort
+more-itertools
 python-dotenv
 requests
 selenium

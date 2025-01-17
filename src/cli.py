@@ -1,13 +1,10 @@
-import math
-from collections import defaultdict
+import pathlib
 
 import click
 
 from client import init_spotipy_client, open_chrome_driver
+from graph import TrackGraph
 from utils import (
-    CamelotKey,
-    TrackInfo,
-    TrackMeta,
     fetch_current_user,
     fetch_current_user_playlists,
     fetch_unique_tracks,
@@ -16,6 +13,7 @@ from utils import (
 
 
 @click.command()
+@click.option("--output-path", type=pathlib.Path, required=True)
 @click.option(
     "--playlist", "-p", multiple=True, help="Names of playlists to process (defaults to all)"
 )
@@ -31,6 +29,7 @@ from utils import (
 @click.option("--special", is_flag=True, default=False)
 @click.option("--bpm-range", type=float, default=0.1)
 def build(
+    output_path: pathlib.Path,
     playlist: list[str],
     num_playlists: int | None,
     num_tracks: int | None,
@@ -56,13 +55,13 @@ def build(
     print(playlists)
     # TODO: need to batch this for larger requests.
     tracks = fetch_unique_tracks(client, playlists, limit=num_tracks)
-    with open_chrome_driver() as driver:
-        track_metas = scrape_track_metadata_beatport(driver, tracks)
+    track_metas = scrape_track_metadata_beatport(open_chrome_driver, tracks)
     print("TRACKS")
     for track, meta in track_metas.items():
         print(track, meta)
     # TODO: make this a separate service, and cache / save the metadata.
-    graph = build_graph(
+
+    graph = TrackGraph.build_graph(
         track_metas,
         perfect=perfect,
         boost=boost,
@@ -72,51 +71,10 @@ def build(
         bpm_range=bpm_range,
     )
     print("GRAPH")
-    for track, matches in graph.items():
+    for track, matches in graph.graph.items():
         print(track, matches)
-
-
-def build_graph(
-    track_metas: dict[TrackInfo, TrackMeta],
-    *,
-    perfect: bool,
-    boost: bool,
-    scale: bool,
-    diag: bool,
-    special: bool,
-    bpm_range: float,
-) -> dict[TrackInfo, set[TrackInfo]]:
-    assert any([perfect, boost, scale, diag, special])
-    assert 0.0 <= bpm_range <= 1.0
-    graph: dict[TrackInfo, set[TrackInfo]] = defaultdict(set)
-    tail = 0
-    window: dict[CamelotKey, set[TrackInfo]] = defaultdict(set)
-    sorted_by_bpm = sorted(track_metas.items(), key=lambda item: item[1].bpm)
-    for track, meta in sorted_by_bpm:
-        # Pop tracks out of the window that are outside the bpm range.
-        bpm_diff = math.ceil(meta.bpm * bpm_range)
-        print(meta.bpm, bpm_diff)
-        while (tail_track := sorted_by_bpm[tail])[1].bpm < meta.bpm - bpm_diff:
-            window[tail_track[1].camelot_key].remove(tail_track[0])
-            tail += 1
-        # Get possible key pairings.
-        pairings = []
-        if perfect:
-            pairings.extend(meta.camelot_key.perfect())
-        if boost:
-            pairings.append(meta.camelot_key.boost())
-        if scale:
-            pairings.append(meta.camelot_key.scale())
-        if diag:
-            pairings.append(meta.camelot_key.diag())
-        if special:
-            pairings.extend(meta.camelot_key.special())
-        # Add pairings to graph.
-        for key in pairings:
-            graph[track].update(window[key])
-        # Add the current track to the sliding window.
-        window[meta.camelot_key].add(track)
-    return graph
+    graph.to_json(output_path)
+    graph = TrackGraph.from_json(output_path)
 
 
 if __name__ == "__main__":
