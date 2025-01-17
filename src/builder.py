@@ -16,8 +16,10 @@ from utils import (
 
 
 @click.command()
-@click.option("--playlist-names", "-n", multiple=True, help="Names of playlists to process")
-@click.option("--num-playlists", "-p", type=int, help="Maximum number of playlists to process")
+@click.option(
+    "--playlist", "-p", multiple=True, help="Names of playlists to process (defaults to all)"
+)
+@click.option("--num-playlists", "-n", type=int, help="Maximum number of playlists to process")
 @click.option("--num-tracks", "-t", type=int, help="Maximum number of tracks to process")
 @click.option(
     "--all-playlists", "-a", is_flag=True, default=False, help="Process playlists not owned by user"
@@ -29,7 +31,7 @@ from utils import (
 @click.option("--special", is_flag=True, default=False)
 @click.option("--bpm-range", type=float, default=0.1)
 def build(
-    playlist_names: list[str],
+    playlist: list[str],
     num_playlists: int | None,
     num_tracks: int | None,
     all_playlists: bool,
@@ -39,15 +41,17 @@ def build(
     diag: bool,
     special: bool,
     bpm_range: float,
-):
-    """Build a graph of track relationships from Spotify playlists."""
+) -> None:
+    """
+    Build a graph of track relationships from Spotify playlists.
+    """
     client = init_spotipy_client()
     if all_playlists:
         user = None
     else:
         user = fetch_current_user(client)
     playlists = fetch_current_user_playlists(
-        client, owner_only=user, names=playlist_names or None, limit=num_playlists
+        client, owner_only=user, names=playlist or None, limit=num_playlists
     )
     print(playlists)
     # TODO: need to batch this for larger requests.
@@ -81,7 +85,7 @@ def build_graph(
     diag: bool,
     special: bool,
     bpm_range: float,
-):
+) -> dict[TrackInfo, set[TrackInfo]]:
     assert any([perfect, boost, scale, diag, special])
     assert 0.0 <= bpm_range <= 1.0
     graph: dict[TrackInfo, set[TrackInfo]] = defaultdict(set)
